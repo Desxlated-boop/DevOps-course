@@ -197,7 +197,7 @@ Docker Engine 29.9.2 и плагин Compose установлены из офи�
 
 База PostgreSQL 16 использует именованный том `app_db_data`, подключена к внутренней сети `backend`, ожидается статус healthy. Порт БД не опубликован. Gunicorn работает от пользователя app и опубликован только на `127.0.0.1:5000`. Статический сайт сохранён, а запросы `/app/` проксируются Nginx на `http://127.0.0.1:5000/` с заголовками Host, X-Real-IP, X-Forwarded-For, X-Forwarded-Proto. Перед применением проверять `sudo nginx -t` и выполнять `sudo systemctl reload nginx`.
 
-Для восстановления доставить `app/` через `rsync -avz --delete --exclude=.env --dry-run app/ devops:app/`, затем повторить без `--dry-run`. На сервере создать `.env` из `.env.example`, задать новый случайный пароль, `chmod 600 .env`; выполнить `cd ~/app && docker compose up -d --build`. Команда `docker compose down` сохраняет данные в томе; `docker compose down -v` удаляет их. Снимок `05-docker-compose` создан после запуска контейнеров.
+Для восстановления доставить `app/` через `rsync -avz --delete --chmod=D755,F644 --exclude=.env --dry-run app/ devops:app/`, затем повторить без `--dry-run`. На сервере создать `.env` из `.env.example`, задать новый случайный пароль, `chmod 600 .env`; выполнить `cd ~/app && docker compose up -d --build`. Команда `docker compose down` сохраняет данные в томе; `docker compose down -v` удаляет их. Снимок `05-docker-compose` создан после запуска контейнеров.
 
 В блоке HTTPS Nginx добавить перед location /:
 
@@ -232,6 +232,8 @@ sudo usermod -aG docker devops
 ```
 
 Начать новую SSH-сессию для применения группы docker. Случайный пароль в `.env` задавать только на сервере, например `openssl rand -hex 16`; сохранять его в POSTGRES_PASSWORD, не публикуя вывод. Публичные исходники содержат Dockerfile, requirements.txt, docker-compose.yml и шаблон .env.example. Для .sh зафиксированы окончания LF в .gitattributes, чтобы Git Windows не превращал их в CRLF.
+
+При доставке проекта из Windows/WSL принудительно задавать права `--chmod=D755,F644`, сохраняя `--exclude=.env`. В Dockerfile обе инструкции COPY содержат `--chmod=644`: права исходников внутри образа не зависят от прав рабочего каталога. Владелец файлов образа root, пользователь приложения app не может менять код. Аудит дополнен проверкой этого условия.
 
 ## 10. Краткая последовательность восстановления
 
