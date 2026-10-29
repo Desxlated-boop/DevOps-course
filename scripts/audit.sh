@@ -52,5 +52,6 @@ check 'Docker is active' 'active' "$(systemctl is-active docker || true)"
 check 'Database is healthy' 'healthy' "$(docker inspect -f '{{.State.Health.Status}}' app-db-1 2>/dev/null || true)"
 check 'Application and database ports are not exposed externally' 'yes' "$(if ss -H -tln | awk '{print $4}' | grep -Eq '(^|:)(5000|5432)$' && ss -H -tln | awk '{print $4}' | grep -E '(^|:)(5000|5432)$' | grep -Ev '^127[.]0[.]0[.]1:5000$' >/dev/null; then echo no; else echo yes; fi)"
 check 'Application environment file mode is 600' '600' "$(stat -c '%a' "$HOME/app/.env" 2>/dev/null || true)"
+check 'Application runs without root and cannot write its code' 'yes' "$(if docker exec app-app-1 sh -c 'test "$(id -u)" != 0 && test ! -w /app/app.py && test ! -w /app/requirements.txt'; then echo yes; else echo no; fi)"
 printf 'Passed: %s, failed: %s\n'  "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]] && exit 0 || exit 1
