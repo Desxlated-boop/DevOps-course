@@ -42,5 +42,10 @@ check 'Firewall is active' 'active' "$(awk '/^Status:/{print $2}' <<<"$UFW_STATU
 check 'Default incoming policy is deny' 'deny' "$(sed -n 's/^Default: \([^ ]*\) (incoming).*/\1/p' <<<"$UFW_STATUS")"
 echo '[3] User accounts'
 awk -F: '$3>=1000 && $3<65534 {printf "    %s (uid=%s)\n",$1,$3}' /etc/passwd
-printf 'Passed: %s, failed: %s\n' "$PASS" "$FAIL"
+echo '[4] Web server'
+check 'Nginx is active' 'active' "$(systemctl is-active nginx || true)"
+check 'Nginx configuration is valid' 'yes' "$(if sudo nginx -t >/dev/null 2>&1; then echo yes; else echo no; fi)"
+check 'Certificate valid for at least 30 days' 'yes' "$(if openssl x509 -in /etc/ssl/certs/devops.crt -checkend "${CERT_MIN_SECONDS:-2592000}" -noout >/dev/null 2>&1; then echo yes; else echo no; fi)"
+check 'Site has no world-writable entries and key mode is 600' 'yes' "$(if [[ -d /var/www/devops-site ]] && [[ -z $(find /var/www/devops-site -perm -o+w -print -quit) ]] && [[ $(sudo stat -c '%a' /etc/ssl/private/devops.key) == 600 ]]; then echo yes; else echo no; fi)"
+printf 'Passed: %s, failed: %s\n'  "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]] && exit 0 || exit 1

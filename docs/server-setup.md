@@ -143,7 +143,14 @@ sudo ufw status verbose
 
 Откат изменяет гостевую систему, но не файл hosts и SSH-конфигурацию Windows. После отката на `01-clean-install` проверить гостевой порт правила NAT и использовать сначала порт 22. Не удалять исходные снимки.
 
-## 8. Краткая последовательность восстановления
+## 8. Веб-сервер
+
+- Пакет: `nginx`. Конфигурация ресурса: `/etc/nginx/sites-available/devops-site`; ссылка в `/etc/nginx/sites-enabled/`. Проверка и применение: `sudo nginx -t && sudo systemctl reload nginx`.
+- Каталог `/var/www/devops-site`, владелец `devops:devops`, права каталога 755 и файлов 644. Порт 80 перенаправляет запросы на HTTPS, порт 443 обслуживает ресурс `devops.local`.
+- Самоподписанный сертификат `/etc/ssl/certs/devops.crt` (root:root, 644); закрытый ключ `/etc/ssl/private/devops.key` (root:root, 600). Сертификат действует 365 дней, содержит SAN `DNS:devops.local`. Сформировать: `sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/devops.key -out /etc/ssl/certs/devops.crt -subj '/CN=devops.local' -addext 'subjectAltName=DNS:devops.local'`; затем установить указанные права. Для проверки клиента скопировать публичный сертификат в `~/devops.crt` и использовать `curl --cacert ~/devops.crt https://devops.local`.
+- Доставка из чистой зафиксированной рабочей копии: `scripts/deploy.sh --dry-run`, затем `scripts/deploy.sh`. На Windows используется WSL 1 с rsync и собственными SSH-ключом и конфигурацией.
+
+## 9. Краткая последовательность восстановления
 
 1. Запустить `DevOps_vm`, войти как `student`, проверить оба интерфейса; при необходимости создать файл Netplan из раздела 2.
 2. Если пользователя нет: `sudo adduser devops`, `sudo usermod -aG sudo devops`. Пароль задаётся отдельно и не хранится в Git.
@@ -159,6 +166,6 @@ Get-Content "$env:USERPROFILE\.ssh\devops_vm.pub" | ssh -p 2222 devops@127.0.0.1
 7. Настроить hostname и hosts гостя и Windows из раздела 5, сверив адрес Host-only. Проверить `hostname -f` и SSH по имени.
 8. Запустить `bash scripts/audit.sh`, получить код 0, убедиться в наличии правила LIMIT и отсутствии слушателя SSH на 22.
 
-## 9. Факультативный туннель
+## 10. Факультативный туннель
 
 Проверено: Python HTTP-сервер был привязан к `127.0.0.1:8080`, внешний запрос блокировался UFW, локальный проброс `ssh -L 127.0.0.1:9090:127.0.0.1:8080 -N devops` возвращал HTTP 200 через `http://127.0.0.1:9090`. Трафик между хостом и VM шёл через SSH 2222. После демонстрации сервер и туннель остановлены.
