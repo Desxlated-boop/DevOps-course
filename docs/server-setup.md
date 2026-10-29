@@ -140,10 +140,58 @@ sudo ufw status verbose
 1. `01-clean-install` — 22.10.2026 13:55 МСК, после установки ОС. UUID `3d3d390f-2e7e-44b0-bda2-cc2c7daa3c16`.
 2. `02-keys-configured` — 23.10.2026 11:46 МСК, после настройки пользователя, ключа и клиента. UUID `e7ef3c8d-54a4-4581-8d78-2081ed1d5b98`.
 3. `03-ssh-hardened` — 25.10.2026, после усиления SSH, настройки UFW, имени узла и контрольных проверок. Создан на выключенной VM.
+4. `04-nginx-https` — после настройки HTTPS, до доставки учебного сайта и установки Docker.
 
 Откат изменяет гостевую систему, но не файл hosts и SSH-конфигурацию Windows. После отката на `01-clean-install` проверить гостевой порт правила NAT и использовать сначала порт 22. Не удалять исходные снимки.
 
-## 8. Краткая последовательность восстановления
+## 8. Веб-сервер
+
+- Пакет: `nginx`. Конфигурация ресурса: `/etc/nginx/sites-available/devops-site`; ссылка в `/etc/nginx/sites-enabled/`. Проверка и применение: `sudo nginx -t && sudo systemctl reload nginx`.
+- Каталог `/var/www/devops-site`, владелец `devops:devops`, права каталога 755 и файлов 644. Порт 80 перенаправляет запросы на HTTPS, порт 443 обслуживает ресурс `devops.local`.
+- Самоподписанный сертификат `/etc/ssl/certs/devops.crt` (root:root, 644); закрытый ключ `/etc/ssl/private/devops.key` (root:root, 600). Сертификат действует 365 дней, содержит SAN `DNS:devops.local`. Сформировать: `sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/devops.key -out /etc/ssl/certs/devops.crt -subj '/CN=devops.local' -addext 'subjectAltName=DNS:devops.local'`; затем установить указанные права. Для проверки клиента скопировать публичный сертификат в `~/devops.crt` и использовать `curl --cacert ~/devops.crt https://devops.local`.
+- Доставка из чистой зафиксированной рабочей копии: `scripts/deploy.sh --dry-run`, затем `scripts/deploy.sh`. На Windows используется WSL 1 с rsync и собственными SSH-ключом и конфигурацией.
+
+Для восстановления ресурса после настройки сети и SSH:
+
+```bash
+sudo apt update && sudo apt install -y nginx rsync
+sudo install -d -o devops -g devops -m 755 /var/www/devops-site
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/devops.key -out /etc/ssl/certs/devops.crt \
+  -subj '/CN=devops.local' -addext 'subjectAltName=DNS:devops.local'
+sudo chown root:root /etc/ssl/private/devops.key /etc/ssl/certs/devops.crt
+sudo chmod 600 /etc/ssl/private/devops.key
+sudo chmod 644 /etc/ssl/certs/devops.crt
+```
+
+Создать `/etc/nginx/sites-available/devops-site`:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name devops.local;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name devops.local;
+    ssl_certificate /etc/ssl/certs/devops.crt;
+    ssl_certificate_key /etc/ssl/private/devops.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    root /var/www/devops-site;
+    index index.html;
+    location / { try_files $uri $uri/ =404; }
+    error_page 404 /404.html;
+    access_log /var/log/nginx/devops-site.access.log;
+    error_log /var/log/nginx/devops-site.error.log;
+}
+```
+
+Создать ссылку `sudo ln -s /etc/nginx/sites-available/devops-site /etc/nginx/sites-enabled/devops-site`, отключить ссылку `default` в `sites-enabled`, проверить `sudo nginx -t` и выполнить `sudo systemctl enable --now nginx && sudo systemctl reload nginx`. Перенести публичный сертификат на хост и доставить содержимое репозитория. В Kaspersky для учебного домена `devops.local` добавлено исключение из проверки защищённых соединений; сертификат отдельно проверяется с `--cacert`.
+
+## 9. Краткая последовательность восстановления
 
 1. Запустить `DevOps_vm`, войти как `student`, проверить оба интерфейса; при необходимости создать файл Netplan из раздела 2.
 2. Если пользователя нет: `sudo adduser devops`, `sudo usermod -aG sudo devops`. Пароль задаётся отдельно и не хранится в Git.
@@ -159,6 +207,6 @@ Get-Content "$env:USERPROFILE\.ssh\devops_vm.pub" | ssh -p 2222 devops@127.0.0.1
 7. Настроить hostname и hosts гостя и Windows из раздела 5, сверив адрес Host-only. Проверить `hostname -f` и SSH по имени.
 8. Запустить `bash scripts/audit.sh`, получить код 0, убедиться в наличии правила LIMIT и отсутствии слушателя SSH на 22.
 
-## 9. Факультативный туннель
+## 10. Факультативный туннель
 
 Проверено: Python HTTP-сервер был привязан к `127.0.0.1:8080`, внешний запрос блокировался UFW, локальный проброс `ssh -L 127.0.0.1:9090:127.0.0.1:8080 -N devops` возвращал HTTP 200 через `http://127.0.0.1:9090`. Трафик между хостом и VM шёл через SSH 2222. После демонстрации сервер и туннель остановлены.
