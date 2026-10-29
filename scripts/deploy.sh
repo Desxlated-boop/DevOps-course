@@ -12,5 +12,8 @@ if [[ ! -f "$ROOT/site/index.html" ]]; then echo "Missing site/index.html; deplo
 if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then echo "Repository has uncommitted changes; deployment refused" >&2; exit 1; fi
 rsync -avz --delete --chmod=D755,F644 "${dry[@]}" -e "ssh -o BatchMode=yes -o ConnectTimeout=5" "$ROOT/site/" "$REMOTE:$REMOTE_DIR"
 if [[ ${1:-} == --dry-run ]]; then echo "Dry run complete"; exit 0; fi
-curl --noproxy '*' --fail --silent --show-error --cacert "$CA_CERT" "$SITE_URL" > /dev/null
+if ! curl --noproxy '*' --fail --silent --show-error --cacert "$CA_CERT" "$SITE_URL" > /dev/null; then
+    echo "HTTPS availability check failed" >&2
+    exit 1
+fi
 printf 'Deployed commit %s\n' "$(git -C "$ROOT" rev-parse --short HEAD)"
