@@ -47,5 +47,10 @@ check 'Nginx is active' 'active' "$(systemctl is-active nginx || true)"
 check 'Nginx configuration is valid' 'yes' "$(if sudo nginx -t >/dev/null 2>&1; then echo yes; else echo no; fi)"
 check 'Certificate valid for at least 30 days' 'yes' "$(if openssl x509 -in /etc/ssl/certs/devops.crt -checkend "${CERT_MIN_SECONDS:-2592000}" -noout >/dev/null 2>&1; then echo yes; else echo no; fi)"
 check 'Site has no world-writable entries and key mode is 600' 'yes' "$(if [[ -d /var/www/devops-site ]] && [[ -z $(find /var/www/devops-site -perm -o+w -print -quit) ]] && [[ $(sudo stat -c '%a' /etc/ssl/private/devops.key) == 600 ]]; then echo yes; else echo no; fi)"
+echo '[5] Containers'
+check 'Docker is active' 'active' "$(systemctl is-active docker || true)"
+check 'Database is healthy' 'healthy' "$(docker inspect -f '{{.State.Health.Status}}' app-db-1 2>/dev/null || true)"
+check 'Application and database ports are not exposed externally' 'yes' "$(if ss -H -tln | awk '{print $4}' | grep -Eq '(^|:)(5000|5432)$' && ss -H -tln | awk '{print $4}' | grep -E '(^|:)(5000|5432)$' | grep -Ev '^127[.]0[.]0[.]1:5000$' >/dev/null; then echo no; else echo yes; fi)"
+check 'Application environment file mode is 600' '600' "$(stat -c '%a' "$HOME/app/.env" 2>/dev/null || true)"
 printf 'Passed: %s, failed: %s\n'  "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]] && exit 0 || exit 1

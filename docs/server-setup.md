@@ -191,7 +191,49 @@ server {
 
 Создать ссылку `sudo ln -s /etc/nginx/sites-available/devops-site /etc/nginx/sites-enabled/devops-site`, отключить ссылку `default` в `sites-enabled`, проверить `sudo nginx -t` и выполнить `sudo systemctl enable --now nginx && sudo systemctl reload nginx`. Перенести публичный сертификат на хост и доставить содержимое репозитория. В Kaspersky для учебного домена `devops.local` добавлено исключение из проверки защищённых соединений; сертификат отдельно проверяется с `--cacert`.
 
-## 9. Краткая последовательность восстановления
+## 9. Контейнеризация
+
+Docker Engine 29.9.2 и плагин Compose установлены из официального репозитория Docker для Ubuntu. Пользователь devops входит в группу docker; эта группа фактически даёт привилегии root. Проект размещён в `/home/devops/app`, переменные и пароль — только в `/home/devops/app/.env` с правами 600; в Git находится лишь `.env.example`.
+
+База PostgreSQL 16 использует именованный том `app_db_data`, подключена к внутренней сети `backend`, ожидается статус healthy. Порт БД не опубликован. Gunicorn работает от пользователя app и опубликован только на `127.0.0.1:5000`. Статический сайт сохранён, а запросы `/app/` проксируются Nginx на `http://127.0.0.1:5000/` с заголовками Host, X-Real-IP, X-Forwarded-For, X-Forwarded-Proto. Перед применением проверять `sudo nginx -t` и выполнять `sudo systemctl reload nginx`.
+
+Для восстановления доставить `app/` через `rsync -avz --delete --exclude=.env --dry-run app/ devops:app/`, затем повторить без `--dry-run`. На сервере создать `.env` из `.env.example`, задать новый случайный пароль, `chmod 600 .env`; выполнить `cd ~/app && docker compose up -d --build`. Команда `docker compose down` сохраняет данные в томе; `docker compose down -v` удаляет их. Снимок `05-docker-compose` создан после запуска контейнеров.
+
+В блоке HTTPS Nginx добавить перед location /:
+
+```nginx
+location /app/ {
+    proxy_pass http://127.0.0.1:5000/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Добавление репозитория Docker при восстановлении Ubuntu 26.04:
+
+```bash
+sudo apt update && sudo apt install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo tee /etc/apt/sources.list.d/docker.sources <<'EOF'
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: resolute
+Components: stable
+Architectures: amd64
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker devops
+```
+
+Начать новую SSH-сессию для применения группы docker. Случайный пароль в `.env` задавать только на сервере, например `openssl rand -hex 16`; сохранять его в POSTGRES_PASSWORD, не публикуя вывод. Публичные исходники содержат Dockerfile, requirements.txt, docker-compose.yml и шаблон .env.example. Для .sh зафиксированы окончания LF в .gitattributes, чтобы Git Windows не превращал их в CRLF.
+
+## 10. Краткая последовательность восстановления
 
 1. Запустить `DevOps_vm`, войти как `student`, проверить оба интерфейса; при необходимости создать файл Netplan из раздела 2.
 2. Если пользователя нет: `sudo adduser devops`, `sudo usermod -aG sudo devops`. Пароль задаётся отдельно и не хранится в Git.
@@ -207,6 +249,6 @@ Get-Content "$env:USERPROFILE\.ssh\devops_vm.pub" | ssh -p 2222 devops@127.0.0.1
 7. Настроить hostname и hosts гостя и Windows из раздела 5, сверив адрес Host-only. Проверить `hostname -f` и SSH по имени.
 8. Запустить `bash scripts/audit.sh`, получить код 0, убедиться в наличии правила LIMIT и отсутствии слушателя SSH на 22.
 
-## 10. Факультативный туннель
+## 11. Факультативный туннель
 
 Проверено: Python HTTP-сервер был привязан к `127.0.0.1:8080`, внешний запрос блокировался UFW, локальный проброс `ssh -L 127.0.0.1:9090:127.0.0.1:8080 -N devops` возвращал HTTP 200 через `http://127.0.0.1:9090`. Трафик между хостом и VM шёл через SSH 2222. После демонстрации сервер и туннель остановлены.
